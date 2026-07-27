@@ -20,3 +20,5 @@ ignore = [
 
 [lint.per-file-ignores]
 "tests/*" = ["N802", "N803"]   # relax the snake_case rule for test functions
+"backend/routers/*" = ["B008"]  # FastAPI Depends in argument defaults is idiomatic
+"backend/auth.py" = ["B008"]    # HTTPBearer Depends in argument defaults is idiomatic

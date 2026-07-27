@@ -3,7 +3,7 @@ from __future__ import annotations
 import uuid
 
 import pytest
-from auth import get_current_user
+from auth import CurrentUser, create_access_token, get_current_user, hash_password
 from database import Base, get_db
 from fastapi.testclient import TestClient
 from main import app
@@ -30,14 +30,13 @@ def _override_get_db():
 
 
 def _override_get_current_user():
-    return {"id": 1, "email": "test@example.com"}
+    return CurrentUser(id=1, email="test@example.com")
 
 
 @pytest.fixture(autouse=True)
-def setup_db_and_overrides():
+def setup_db():
     Base.metadata.create_all(bind=test_engine)
     app.dependency_overrides[get_db] = _override_get_db
-    app.dependency_overrides[get_current_user] = _override_get_current_user
     yield
     app.dependency_overrides.clear()
     Base.metadata.drop_all(bind=test_engine)
@@ -89,6 +88,19 @@ def other_column(db, other_user):
     return col
 
 
+def _create_user_and_token(email: str = "test@example.com") -> tuple[User, str]:
+    db = TestSessionLocal()
+    try:
+        user = User(email=email, hashed_password=hash_password("password"))
+        db.add(user)
+        db.commit()
+        db.refresh(user)
+        token = create_access_token(user.id)
+        return user, token
+    finally:
+        db.close()
+
+
 def test_health_endpoint_returns_ok() -> None:
     with TestClient(app) as client:
         response = client.get("/api/health")
@@ -96,10 +108,10 @@ def test_health_endpoint_returns_ok() -> None:
         assert response.json() == {"status": "ok"}
 
 
-def test_columns_router_is_mounted_and_returns_501() -> None:
+def test_columns_router_requires_auth() -> None:
     with TestClient(app) as client:
         response = client.get("/api/columns")
-        assert response.status_code == 501
+        assert response.status_code == 401
 
 
 def test_cors_headers_are_present() -> None:
@@ -207,6 +219,10 @@ class TestLogin:
 
 
 class TestCardsRouter:
+    @pytest.fixture(autouse=True)
+    def _override_auth(self):
+        app.dependency_overrides[get_current_user] = _override_get_current_user
+
     def test_get_cards_returns_empty_list_for_empty_column(self, column) -> None:
         with TestClient(app) as client:
             response = client.get(f"/api/cards?column_id={column.id}")
@@ -524,3 +540,320 @@ class TestCardsRouter:
             )
             assert response.status_code == 404
             assert response.json()["detail"] == "Target column not found"
+
+
+def test_get_columns_returns_empty_list_for_new_user() -> None:
+    _, token = _create_user_and_token("empty@example.com")
+    with TestClient(app) as client:
+        response = client.get("/api/columns", headers={"Authorization": f"Bearer {token}"})
+        assert response.status_code == 200
+        assert response.json() == []
+
+
+def test_create_column_success() -> None:
+    _, token = _create_user_and_token("creator@example.com")
+    with TestClient(app) as client:
+        response = client.post(
+            "/api/columns",
+            json={"title": "To Do"},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert response.status_code == 201
+        data = response.json()
+        assert data["title"] == "To Do"
+        assert data["position"] == 0
+        assert "id" in data
+
+
+def test_create_column_position_auto_increment() -> None:
+    _, token = _create_user_and_token("position@example.com")
+    with TestClient(app) as client:
+        r1 = client.post(
+            "/api/columns", json={"title": "First"}, headers={"Authorization": f"Bearer {token}"}
+        )
+        assert r1.status_code == 201
+        r2 = client.post(
+            "/api/columns", json={"title": "Second"}, headers={"Authorization": f"Bearer {token}"}
+        )
+        assert r2.status_code == 201
+        r3 = client.post(
+            "/api/columns", json={"title": "Third"}, headers={"Authorization": f"Bearer {token}"}
+        )
+        assert r3.status_code == 201
+        assert r1.json()["position"] == 0
+        assert r2.json()["position"] == 1
+        assert r3.json()["position"] == 2
+
+
+def test_create_column_empty_title_rejected() -> None:
+    _, token = _create_user_and_token("reject@example.com")
+    with TestClient(app) as client:
+        response = client.post(
+            "/api/columns",
+            json={"title": ""},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert response.status_code == 422
+
+
+def test_create_column_title_too_long_rejected() -> None:
+    _, token = _create_user_and_token("toolong@example.com")
+    with TestClient(app) as client:
+        response = client.post(
+            "/api/columns",
+            json={"title": "X" * 101},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert response.status_code == 422
+
+
+def test_get_columns_sorted_by_position() -> None:
+    _, token = _create_user_and_token("sorted@example.com")
+    with TestClient(app) as client:
+        client.post(
+            "/api/columns", json={"title": "Third"}, headers={"Authorization": f"Bearer {token}"}
+        )
+        client.post(
+            "/api/columns", json={"title": "First"}, headers={"Authorization": f"Bearer {token}"}
+        )
+        client.post(
+            "/api/columns", json={"title": "Second"}, headers={"Authorization": f"Bearer {token}"}
+        )
+        response = client.get("/api/columns", headers={"Authorization": f"Bearer {token}"})
+        assert response.status_code == 200
+        data = response.json()
+        assert len(data) == 3
+        positions = [c["position"] for c in data]
+        assert positions == [0, 1, 2]
+
+
+def test_update_column_success() -> None:
+    _, token = _create_user_and_token("updater@example.com")
+    with TestClient(app) as client:
+        create_resp = client.post(
+            "/api/columns", json={"title": "Old Name"}, headers={"Authorization": f"Bearer {token}"}
+        )
+        column_id = create_resp.json()["id"]
+
+        response = client.put(
+            f"/api/columns/{column_id}",
+            json={"title": "New Name"},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert response.status_code == 200
+        assert response.json()["title"] == "New Name"
+        assert response.json()["id"] == column_id
+
+
+def test_update_column_not_found() -> None:
+    _, token = _create_user_and_token("updater404@example.com")
+    with TestClient(app) as client:
+        response = client.put(
+            "/api/columns/9999",
+            json={"title": "New Name"},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert response.status_code == 404
+
+
+def test_update_column_of_other_user_returns_404() -> None:
+    _user1, token1 = _create_user_and_token("owner@example.com")
+    _, token2 = _create_user_and_token("intruder@example.com")
+
+    with TestClient(app) as client:
+        create_resp = client.post(
+            "/api/columns",
+            json={"title": "My Column"},
+            headers={"Authorization": f"Bearer {token1}"},
+        )
+        column_id = create_resp.json()["id"]
+
+        response = client.put(
+            f"/api/columns/{column_id}",
+            json={"title": "Hacked"},
+            headers={"Authorization": f"Bearer {token2}"},
+        )
+        assert response.status_code == 404
+
+
+def test_delete_column_success() -> None:
+    _, token = _create_user_and_token("deleter@example.com")
+    with TestClient(app) as client:
+        create_resp = client.post(
+            "/api/columns",
+            json={"title": "Delete Me"},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        column_id = create_resp.json()["id"]
+
+        response = client.delete(
+            f"/api/columns/{column_id}", headers={"Authorization": f"Bearer {token}"}
+        )
+        assert response.status_code == 204
+
+        get_resp = client.get("/api/columns", headers={"Authorization": f"Bearer {token}"})
+        assert len(get_resp.json()) == 0
+
+
+def test_delete_column_not_found() -> None:
+    _, token = _create_user_and_token("deleter404@example.com")
+    with TestClient(app) as client:
+        response = client.delete("/api/columns/9999", headers={"Authorization": f"Bearer {token}"})
+        assert response.status_code == 404
+
+
+def test_delete_column_of_other_user_returns_404() -> None:
+    _, token1 = _create_user_and_token("owner_del@example.com")
+    _, token2 = _create_user_and_token("intruder_del@example.com")
+
+    with TestClient(app) as client:
+        create_resp = client.post(
+            "/api/columns",
+            json={"title": "My Column"},
+            headers={"Authorization": f"Bearer {token1}"},
+        )
+        column_id = create_resp.json()["id"]
+
+        response = client.delete(
+            f"/api/columns/{column_id}", headers={"Authorization": f"Bearer {token2}"}
+        )
+        assert response.status_code == 404
+
+        get_resp = client.get("/api/columns", headers={"Authorization": f"Bearer {token1}"})
+        assert len(get_resp.json()) == 1
+
+
+def test_reorder_columns_success() -> None:
+    _, token = _create_user_and_token("reorderer@example.com")
+    with TestClient(app) as client:
+        r1 = client.post(
+            "/api/columns", json={"title": "A"}, headers={"Authorization": f"Bearer {token}"}
+        )
+        r2 = client.post(
+            "/api/columns", json={"title": "B"}, headers={"Authorization": f"Bearer {token}"}
+        )
+        r3 = client.post(
+            "/api/columns", json={"title": "C"}, headers={"Authorization": f"Bearer {token}"}
+        )
+
+        id_a = r1.json()["id"]
+        id_b = r2.json()["id"]
+        id_c = r3.json()["id"]
+
+        response = client.put(
+            "/api/columns/reorder",
+            json=[
+                {"id": id_c, "position": 0},
+                {"id": id_a, "position": 1},
+                {"id": id_b, "position": 2},
+            ],
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert response.status_code == 200
+        assert response.json() == {"status": "ok"}
+
+        get_resp = client.get("/api/columns", headers={"Authorization": f"Bearer {token}"})
+        columns = get_resp.json()
+        assert columns[0]["id"] == id_c
+        assert columns[0]["position"] == 0
+        assert columns[1]["id"] == id_a
+        assert columns[1]["position"] == 1
+        assert columns[2]["id"] == id_b
+        assert columns[2]["position"] == 2
+
+
+def test_reorder_columns_with_foreign_id_returns_404() -> None:
+    _user1, token1 = _create_user_and_token("reorder_owner@example.com")
+    _, token2 = _create_user_and_token("reorder_intruder@example.com")
+
+    with TestClient(app) as client:
+        r1 = client.post(
+            "/api/columns", json={"title": "Mine"}, headers={"Authorization": f"Bearer {token1}"}
+        )
+        my_id = r1.json()["id"]
+
+        r2 = client.post(
+            "/api/columns", json={"title": "Theirs"}, headers={"Authorization": f"Bearer {token2}"}
+        )
+        their_id = r2.json()["id"]
+
+        response = client.put(
+            "/api/columns/reorder",
+            json=[
+                {"id": my_id, "position": 0},
+                {"id": their_id, "position": 1},
+            ],
+            headers={"Authorization": f"Bearer {token1}"},
+        )
+        assert response.status_code == 404
+
+
+def test_reorder_columns_empty_list() -> None:
+    _, token = _create_user_and_token("reorder_empty@example.com")
+    with TestClient(app) as client:
+        response = client.put(
+            "/api/columns/reorder",
+            json=[],
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert response.status_code == 200
+        assert response.json() == {"status": "ok"}
+
+
+def test_delete_column_cascades_cards() -> None:
+    user, token = _create_user_and_token("cascade@example.com")
+    with TestClient(app) as client:
+        create_resp = client.post(
+            "/api/columns",
+            json={"title": "With Cards"},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        column_id = create_resp.json()["id"]
+
+        db = TestSessionLocal()
+        try:
+            db.add(Card(title="Card 1", position=0, column_id=column_id, user_id=user.id))
+            db.add(Card(title="Card 2", position=1, column_id=column_id, user_id=user.id))
+            db.commit()
+        finally:
+            db.close()
+
+        response = client.delete(
+            f"/api/columns/{column_id}", headers={"Authorization": f"Bearer {token}"}
+        )
+        assert response.status_code == 204
+
+        get_resp = client.get("/api/columns", headers={"Authorization": f"Bearer {token}"})
+        assert get_resp.json() == []
+
+
+def test_user_isolation_columns_not_visible_to_other_user() -> None:
+    _, token1 = _create_user_and_token("isolated1@example.com")
+    _, token2 = _create_user_and_token("isolated2@example.com")
+
+    with TestClient(app) as client:
+        client.post(
+            "/api/columns",
+            json={"title": "User1 Col"},
+            headers={"Authorization": f"Bearer {token1}"},
+        )
+
+        resp = client.get("/api/columns", headers={"Authorization": f"Bearer {token2}"})
+        assert resp.status_code == 200
+        assert resp.json() == []
+
+
+def test_update_column_empty_title_rejected() -> None:
+    _, token = _create_user_and_token("update_empty@example.com")
+    with TestClient(app) as client:
+        create_resp = client.post(
+            "/api/columns", json={"title": "Valid"}, headers={"Authorization": f"Bearer {token}"}
+        )
+        column_id = create_resp.json()["id"]
+
+        response = client.put(
+            f"/api/columns/{column_id}",
+            json={"title": ""},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert response.status_code == 422
