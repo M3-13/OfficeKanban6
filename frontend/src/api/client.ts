@@ -1,4 +1,4 @@
-const BASE_URL = "http://localhost:8000/api";
+export const BASE_URL = "http://localhost:8000/api";
 
 function getAuthHeaders(): Record<string, string> {
   const token = localStorage.getItem("token");
