@@ -3,14 +3,7 @@ import * as cardsApi from "../api/cards";
 import type { CardData } from "../api/cards";
 
 interface CardProps {
-  card: {
-    id: number;
-    title: string;
-    description: string;
-    position: number;
-    column_id: number;
-    user_id: number;
-  };
+  card: CardData;
   onUpdate?: (card: CardData) => void;
   onDelete?: (cardId: number) => void;
 }
@@ -24,7 +17,7 @@ function Card({ card, onUpdate, onDelete }: CardProps) {
   const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState("");
   const [dragging, setDragging] = useState(false);
-  const [currentCard, setCurrentCard] = useState<CardData>(card as CardData);
+  const [currentCard, setCurrentCard] = useState<CardData>(card);
 
   const openModal = useCallback(() => {
     setTitle(currentCard.title);

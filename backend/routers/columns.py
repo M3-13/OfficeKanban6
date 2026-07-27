@@ -16,12 +16,19 @@ async def get_columns(
     current_user: CurrentUser = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> list[ColumnModel]:
-    return (
+    columns = (
         db.query(ColumnModel)
         .filter(ColumnModel.user_id == current_user.id)
         .order_by(ColumnModel.position)
         .all()
     )
+    if not columns:
+        default = ColumnModel(title="To Do", position=0, user_id=current_user.id)
+        db.add(default)
+        db.commit()
+        db.refresh(default)
+        return [default]
+    return columns
 
 
 @router.post("", response_model=ColumnResponse, status_code=status.HTTP_201_CREATED)

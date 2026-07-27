@@ -542,12 +542,15 @@ class TestCardsRouter:
             assert response.json()["detail"] == "Target column not found"
 
 
-def test_get_columns_returns_empty_list_for_new_user() -> None:
+def test_get_columns_returns_default_column_for_new_user() -> None:
     _, token = _create_user_and_token("empty@example.com")
     with TestClient(app) as client:
         response = client.get("/api/columns", headers={"Authorization": f"Bearer {token}"})
         assert response.status_code == 200
-        assert response.json() == []
+        data = response.json()
+        assert len(data) == 1
+        assert data[0]["title"] == "To Do"
+        assert data[0]["position"] == 0
 
 
 def test_create_column_success() -> None:
@@ -692,7 +695,9 @@ def test_delete_column_success() -> None:
         assert response.status_code == 204
 
         get_resp = client.get("/api/columns", headers={"Authorization": f"Bearer {token}"})
-        assert len(get_resp.json()) == 0
+        data = get_resp.json()
+        assert len(data) == 1
+        assert data[0]["title"] == "To Do"
 
 
 def test_delete_column_not_found() -> None:
@@ -824,7 +829,9 @@ def test_delete_column_cascades_cards() -> None:
         assert response.status_code == 204
 
         get_resp = client.get("/api/columns", headers={"Authorization": f"Bearer {token}"})
-        assert get_resp.json() == []
+        data = get_resp.json()
+        assert len(data) == 1
+        assert data[0]["title"] == "To Do"
 
 
 def test_user_isolation_columns_not_visible_to_other_user() -> None:
@@ -832,15 +839,19 @@ def test_user_isolation_columns_not_visible_to_other_user() -> None:
     _, token2 = _create_user_and_token("isolated2@example.com")
 
     with TestClient(app) as client:
-        client.post(
+        create_resp = client.post(
             "/api/columns",
             json={"title": "User1 Col"},
             headers={"Authorization": f"Bearer {token1}"},
         )
+        user1_col_id = create_resp.json()["id"]
 
         resp = client.get("/api/columns", headers={"Authorization": f"Bearer {token2}"})
         assert resp.status_code == 200
-        assert resp.json() == []
+        data = resp.json()
+        assert len(data) == 1
+        assert data[0]["title"] == "To Do"
+        assert data[0]["user_id"] != user1_col_id
 
 
 def test_update_column_empty_title_rejected() -> None:
