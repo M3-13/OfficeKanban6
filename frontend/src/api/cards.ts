@@ -22,8 +22,8 @@ export interface CardUpdateRequest {
 
 export interface CardMoveRequest {
   card_id: number;
-  column_id: number;
-  position: number;
+  target_column_id: number;
+  target_position: number;
 }
 
 export async function getCards(columnId: number): Promise<CardData[]> {
@@ -63,8 +63,8 @@ export async function moveCard(
 ): Promise<void> {
   const body: CardMoveRequest = {
     card_id: cardId,
-    column_id: targetColumnId,
-    position: targetPosition,
+    target_column_id: targetColumnId,
+    target_position: targetPosition,
   };
   return apiPut<void>("/cards/move", body);
 }

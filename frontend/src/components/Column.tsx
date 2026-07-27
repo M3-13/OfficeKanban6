@@ -3,15 +3,34 @@ import { updateColumn, deleteColumn, type ColumnData } from "../api/columns";
 import Card from "./Card";
 import CreateCardForm from "./CreateCardForm";
 import type { CardData } from "../api/cards";
+import { useCardDrop } from "../hooks/useCardDrop";
 
 interface ColumnProps {
   column: ColumnData;
   cards?: CardData[];
   onUpdate: (updated: ColumnData) => void;
   onDelete: (id: number) => void;
+  onCardCreated?: (columnId: number) => void;
+  onCardUpdated?: (card: CardData) => void;
+  onCardDeleted?: (cardId: number, columnId: number) => void;
+  onCardDrop?: (
+    cardId: number,
+    sourceColumnId: number,
+    targetColumnId: number,
+    targetPosition: number,
+  ) => void;
 }
 
-function Column({ column, cards = [], onUpdate, onDelete }: ColumnProps) {
+function Column({
+  column,
+  cards = [],
+  onUpdate,
+  onDelete,
+  onCardCreated,
+  onCardUpdated,
+  onCardDeleted,
+  onCardDrop,
+}: ColumnProps) {
   const [isEditing, setIsEditing] = useState(false);
   const [editTitle, setEditTitle] = useState(column.title);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
@@ -19,6 +38,12 @@ function Column({ column, cards = [], onUpdate, onDelete }: ColumnProps) {
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const editInputRef = useRef<HTMLInputElement>(null);
+
+  const { dragOver, handleDragOver, handleDragLeave, handleDrop } = useCardDrop(
+    column.id,
+    onCardDrop ?? (() => {}),
+    cards.length,
+  );
 
   function startEditing() {
     setEditTitle(column.title);
@@ -87,6 +112,9 @@ function Column({ column, cards = [], onUpdate, onDelete }: ColumnProps) {
 
   return (
     <div
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+      onDrop={handleDrop}
       style={{
         backgroundColor: "#EEEEF2",
         borderRadius: "var(--radius-lg)",
@@ -98,6 +126,8 @@ function Column({ column, cards = [], onUpdate, onDelete }: ColumnProps) {
         flexDirection: "column",
         gap: "var(--space-1)",
         flexShrink: 0,
+        border: dragOver ? "2px dashed var(--color-accent, #3B5CCC)" : "2px solid transparent",
+        transition: "border-color 0.15s ease",
       }}
     >
       <div
@@ -154,6 +184,20 @@ function Column({ column, cards = [], onUpdate, onDelete }: ColumnProps) {
             title="Klicken zum Umbenennen"
           >
             {column.title}
+          </span>
+        )}
+        {cards.length > 0 && (
+          <span
+            style={{
+              background: "#D8DAE5",
+              color: "#5A5B6A",
+              borderRadius: "var(--radius-pill)",
+              fontSize: "12px",
+              padding: "1px 8px",
+              marginLeft: "8px",
+            }}
+          >
+            {cards.length}
           </span>
         )}
         <button
@@ -273,9 +317,19 @@ function Column({ column, cards = [], onUpdate, onDelete }: ColumnProps) {
             Keine Karten
           </div>
         ) : (
-          cards.map((card) => <Card key={card.id} card={card} />)
+          cards.map((card) => (
+            <Card
+              key={card.id}
+              card={card}
+              onUpdate={onCardUpdated}
+              onDelete={(cardId) => onCardDeleted?.(cardId, column.id)}
+            />
+          ))
         )}
-        <CreateCardForm columnId={column.id} />
+        <CreateCardForm
+          columnId={column.id}
+          onCardCreated={() => onCardCreated?.(column.id)}
+        />
       </div>
     </div>
   );

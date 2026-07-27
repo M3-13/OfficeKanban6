@@ -71,19 +71,20 @@ Das Frontend ist unter `http://localhost:5173` erreichbar. Der Vite-Dev-Server p
 - `POST /api/columns` — Spalte erstellen (Body: `{"title": "..."}`)
 - `PUT /api/columns/{id}` — Spalte umbenennen
 - `DELETE /api/columns/{id}` — Spalte löschen
-- `PUT /api/columns/reorder` — Spalten-Reihenfolge ändern (Body: `[id1, id2, ...]`)
+- `PUT /api/columns/reorder` — Spalten-Reihenfolge ändern (Body: `[{"id": 1, "position": 0}, ...]`)
 
 ### Cards
 
-- `GET /api/cards` — Alle Karten des Users
+- `GET /api/cards?column_id={id}` — Alle Karten einer Spalte (Query-Parameter `column_id` erforderlich)
 - `POST /api/cards` — Karte erstellen (Body: `{"title": "...", "description": "...", "column_id": 1}`)
 - `PUT /api/cards/{id}` — Karte bearbeiten
 - `DELETE /api/cards/{id}` — Karte löschen
-- `PUT /api/cards/move` — Karte in andere Spalte verschieben (Body: `{"card_id": 1, "column_id": 2}`)
+- `PUT /api/cards/move` — Karte in andere Spalte verschieben (Body: `{"card_id": 1, "target_column_id": 2, "target_position": 0}`)
 
 ## Features
 
 - Benutzerregistrierung und JWT-basierte Authentifizierung
+- Automatische Standard-Spalte "To Do" für neue Benutzer
 - Privates Kanban-Board pro Benutzer (vollständige Datenisolation)
 - CRUD-Operationen für Spalten und Karten
 - Drag & Drop von Karten zwischen Spalten

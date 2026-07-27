@@ -60,7 +60,8 @@ export async function deleteColumn(id: number): Promise<void> {
 
 export async function reorderColumns(orderedIds: number[]): Promise<void> {
   try {
-    await apiPut<void>("/columns/reorder", orderedIds);
+    const body = orderedIds.map((id, index) => ({ id, position: index }));
+    await apiPut<void>("/columns/reorder", body);
   } catch (error) {
     throw new Error(
       `Failed to reorder columns: ${error instanceof Error ? error.message : "Unknown error"}`,
