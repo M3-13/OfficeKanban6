@@ -39,6 +39,11 @@ class ColumnResponse(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class AuthResponse(BaseModel):
+    user: UserResponse
+    access_token: str
+
+
 class CardCreate(BaseModel):
     title: str = Field(..., min_length=1, max_length=200)
     description: str = Field(default="", max_length=2000)

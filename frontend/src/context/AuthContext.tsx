@@ -22,10 +22,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const result = await authApi.login({ email, password });
     localStorage.setItem("token", result.access_token);
     setToken(result.access_token);
+    setUser(result.user);
   }, []);
 
   const register = useCallback(async (email: string, password: string) => {
-    await authApi.register({ email, password });
+    const result = await authApi.register({ email, password });
+    localStorage.setItem("token", result.access_token);
+    setToken(result.access_token);
+    setUser(result.user);
   }, []);
 
   const logout = useCallback(() => {
