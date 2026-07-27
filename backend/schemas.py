@@ -57,7 +57,9 @@ class AuthResponse(BaseModel):
 
 
 class CardMove(BaseModel):
-    column_id: int
+    card_id: int
+    target_column_id: int
+    target_position: int
 
 
 class CardResponse(BaseModel):
