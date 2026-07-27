@@ -50,6 +50,12 @@ class CardUpdate(BaseModel):
     description: str | None = Field(default=None, max_length=2000)
 
 
+class AuthResponse(BaseModel):
+    user: UserResponse
+    access_token: str
+    token_type: str = "bearer"
+
+
 class CardMove(BaseModel):
     column_id: int
 
