@@ -62,6 +62,11 @@ class CardMove(BaseModel):
     target_position: int
 
 
+class ColumnReorderItem(BaseModel):
+    id: int
+    position: int = Field(..., ge=0)
+
+
 class CardResponse(BaseModel):
     id: int
     title: str
