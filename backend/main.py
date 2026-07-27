@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 
+import models  # noqa: F401 — registers table metadata with Base before create_all
 from database import Base, engine
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -10,7 +11,8 @@ from routers import auth, cards, columns
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    Base.metadata.create_all(bind=engine)
+    with suppress(Exception):
+        Base.metadata.create_all(bind=engine)
     yield
 
 
