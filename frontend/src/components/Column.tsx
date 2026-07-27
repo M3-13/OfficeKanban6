@@ -275,7 +275,7 @@ function Column({ column, cards = [], onUpdate, onDelete }: ColumnProps) {
         ) : (
           cards.map((card) => <Card key={card.id} card={card} />)
         )}
-        <CreateCardForm />
+        <CreateCardForm columnId={column.id} />
       </div>
     </div>
   );

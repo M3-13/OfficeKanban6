@@ -66,3 +66,31 @@ input {
 .min-interactive-height {
   min-height: 48px;
 }
+
+.card {
+  cursor: pointer;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.card:hover {
+  box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+  border-color: #C8CCD8;
+}
+
+.card--dragging {
+  opacity: 0.5;
+  cursor: grabbing;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.14) !important;
+  border-color: var(--color-accent) !important;
+  transform: rotate(2deg);
+}
+
+.modal-backdrop {
+  animation: fadeIn 0.15s ease;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
