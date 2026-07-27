@@ -1,0 +1,77 @@
+# office-crew-ci-gates: strict-v3
+# Auto-generated for fullstack projects v3 (GitHub Actions).
+# Convention: Python backend in backend/, JS frontend in frontend/.
+# Each job NO-OPS gracefully when its part is absent on the branch: the
+# orchestrator splits a sprint into per-file tickets across waves, so a single
+# feature branch often carries only the backend OR only the frontend slice. A
+# rigid `cd backend` / `npm ci` would red-fail every such branch even though the
+# code is correct, blocking the merge that would have brought the missing part.
+name: CI
+on:
+  pull_request:
+  push:
+    branches: [ main ]
+jobs:
+  backend-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - shell: bash
+        run: |
+          if [ ! -d backend ]; then echo "No backend/ on this branch — skip"; exit 0; fi
+          python -m pip install --upgrade pip
+          # requirements.txt may sit in backend/ OR at the repo root — install both.
+          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+          cd backend
+          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+          if [ -f pyproject.toml ]; then pip install -e . || pip install .; fi
+          # httpx2: fastapi.testclient → starlette.testclient requires it and
+          # raises at import time without it (kills the whole collection).
+          pip install pytest pytest-cov httpx2
+          # Coverage reported, not merge-blocking — see the python template above.
+          PYTHONPATH=. pytest -v --cov=. --cov-report=term || test $? -eq 5
+  backend-lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - shell: bash
+        run: |
+          if [ ! -d backend ]; then echo "No backend/ on this branch — skip"; exit 0; fi
+          cd backend
+          pip install ruff
+          ruff format --check .
+          ruff check .
+  frontend-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - shell: bash
+        run: |
+          if [ ! -d frontend ]; then echo "No frontend/ on this branch — skip"; exit 0; fi
+          cd frontend
+          if [ -f package.json ]; then
+            # npm-based frontend (Vite/React/…): install, optional test, optional build.
+            if [ -f package-lock.json ]; then npm ci; else npm install; fi
+            # --passWithNoTests only for vitest/jest (see the web-vite template).
+            if grep -qE '"test"[[:space:]]*:[[:space:]]*"[^"]*(vitest|jest)' package.json; then npm test -- --run --passWithNoTests; elif grep -q '"test"' package.json; then npm test -- --run; fi
+            if grep -q '"build"' package.json; then npm run build; fi
+          else
+            # Vanilla HTML/CSS/JS — no npm. Run node:test on any *.test.mjs/.js.
+            shopt -s nullglob
+            tests=(tests/*.test.mjs tests/*.test.js src/*.test.mjs)
+            if [ ${#tests[@]} -gt 0 ]; then
+              echo "Running ${#tests[@]} node test file(s)…"
+              node --test "${tests[@]}"
+            else
+              echo "Vanilla frontend without node tests — accepted"
+            fi
+          fi
